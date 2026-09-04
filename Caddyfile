@@ -1,0 +1,4 @@
+{$BACKEND_HOST} {
+    encode zstd gzip
+    reverse_proxy backend:8000
+}
