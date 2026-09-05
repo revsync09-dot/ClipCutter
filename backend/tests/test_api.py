@@ -6,7 +6,7 @@ import pytest
 from starlette.datastructures import Headers, UploadFile
 from starlette.requests import Request
 
-from backend.app.api.routes.projects import _video_extension, _video_extension_from_metadata
+from backend.app.api.routes.projects import _chunk_upload_paths, _video_extension, _video_extension_from_metadata
 from backend.app.main import app
 from backend.app.core.config import Settings
 from backend.app.schemas.jobs import RenderRequest
@@ -15,6 +15,7 @@ from backend.app.services.headlines import generate_dual_headlines, generate_soc
 from backend.app.services.video import _correlate_audio_envelopes
 from backend.app.services.presence import client_ip
 from backend.app.core.media_tokens import create_media_token, verify_media_token
+from backend.app.core.auth import AuthenticatedUser, _current_user, get_current_user
 from fastapi import HTTPException
 import numpy as np
 import cv2
@@ -58,6 +59,47 @@ def test_projects_require_authentication() -> None:
     with TestClient(app) as client:
         response = client.get("/api/projects")
         assert response.status_code == 401
+
+
+def test_chunk_upload_accepts_parallel_out_of_order_blocks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("backend.app.api.routes.projects.settings.storage_path", tmp_path)
+    user = AuthenticatedUser(id="upload-user", email="upload@example.com", access_token="test")
+
+    async def authenticated_user() -> AuthenticatedUser:
+        _current_user.set(user)
+        return user
+
+    app.dependency_overrides[get_current_user] = authenticated_user
+    try:
+        with TestClient(app) as client:
+            size = 10 * 1024 * 1024
+            initialized = client.post(
+                "/api/projects/upload/init",
+                json={"filename": "parallel.mp4", "content_type": "video/mp4", "size": size},
+            )
+            assert initialized.status_code == 201
+            upload = initialized.json()
+            chunk_size = upload["chunk_size"]
+            second = b"b" * (size - chunk_size)
+            first = b"a" * chunk_size
+            second_response = client.put(
+                f"/api/projects/upload/{upload['upload_id']}/chunk?offset={chunk_size}",
+                content=second,
+                headers={"content-type": "application/octet-stream"},
+            )
+            first_response = client.put(
+                f"/api/projects/upload/{upload['upload_id']}/chunk?offset=0",
+                content=first,
+                headers={"content-type": "application/octet-stream"},
+            )
+            assert second_response.status_code == 200
+            assert first_response.status_code == 200
+            part_path, _ = _chunk_upload_paths(upload["upload_id"])
+            with part_path.open("rb") as uploaded:
+                assert uploaded.read(chunk_size) == first
+                assert uploaded.read() == second
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_media_token_is_scoped_and_rejects_tampering() -> None:

@@ -457,10 +457,16 @@ export function uploadVideo(
   onProgress: (progress: number) => void,
   uploadName = file.name,
 ): Promise<Project> {
-  // Every source video travels in independently retryable 16 MB blocks. This
-  // is reliable on unstable connections and stays below Cloudflare Free's
-  // per-request upload limit regardless of the complete file size.
+  // Every source video travels in independently retryable blocks. The backend
+  // accepts blocks out of order, so several connections can use the available
+  // upload bandwidth instead of waiting for a round trip after every block.
   return uploadVideoInChunks(file, onProgress, uploadName);
+}
+
+export async function warmCutter(): Promise<void> {
+  if (!API_BASE_URL) return;
+  const response = await fetch(`${API_BASE_URL}/health`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Der Video-Dienst konnte nicht gestartet werden.');
 }
 
 async function uploadVideoInChunks(
@@ -468,6 +474,7 @@ async function uploadVideoInChunks(
   onProgress: (progress: number) => void,
   uploadName: string,
 ): Promise<Project> {
+  onProgress(1);
   const initialized = await authFetch(`${API_BASE_URL}/projects/upload/init`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -475,10 +482,17 @@ async function uploadVideoInChunks(
   });
   if (!initialized.ok) throw new Error(await parseError(initialized));
   const upload = await initialized.json() as { upload_id: string; received_bytes: number; chunk_size: number };
-  let offset = upload.received_bytes;
-  while (offset < file.size) {
-    const end = Math.min(offset + upload.chunk_size, file.size);
-    const block = file.slice(offset, end);
+  const chunks = Array.from(
+    { length: Math.ceil(file.size / upload.chunk_size) },
+    (_, index) => {
+      const offset = index * upload.chunk_size;
+      return { offset, block: file.slice(offset, Math.min(offset + upload.chunk_size, file.size)) };
+    },
+  );
+  let nextChunk = 0;
+  let completedBytes = upload.received_bytes;
+
+  const sendChunk = async ({ offset, block }: { offset: number; block: Blob }) => {
     let lastError: unknown = null;
     let accepted = false;
     for (let attempt = 0; attempt < 4 && !accepted; attempt += 1) {
@@ -488,8 +502,7 @@ async function uploadVideoInChunks(
           { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: block },
         );
         if (!response.ok) throw new Error(await parseError(response));
-        const result = await response.json() as { received_bytes: number };
-        offset = result.received_bytes;
+        await response.json();
         accepted = true;
       } catch (reason) {
         lastError = reason;
@@ -499,8 +512,18 @@ async function uploadVideoInChunks(
     if (!accepted) {
       throw lastError instanceof Error ? lastError : new Error('Ein Video-Block konnte nicht übertragen werden.');
     }
-    onProgress(Math.min(99, Math.round((offset / file.size) * 100)));
-  }
+    completedBytes += block.size;
+    onProgress(Math.min(99, Math.max(2, Math.round((completedBytes / file.size) * 100))));
+  };
+
+  const worker = async () => {
+    while (nextChunk < chunks.length) {
+      const chunk = chunks[nextChunk];
+      nextChunk += 1;
+      await sendChunk(chunk);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, () => worker()));
   onProgress(100);
   const completed = await authFetch(
     `${API_BASE_URL}/projects/upload/${encodeURIComponent(upload.upload_id)}/complete`,

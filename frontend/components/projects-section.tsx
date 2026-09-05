@@ -4,7 +4,7 @@ import { ChangeEvent, DragEvent, FormEvent, useCallback, useEffect, useRef, useS
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUpFromLine, Check, Film, LoaderCircle, Plus, TriangleAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Project, getProjects, projectMediaUrl, uploadVideo } from '../lib/api';
+import { Project, getProjects, projectMediaUrl, uploadVideo, warmCutter } from '../lib/api';
 import { useAuth } from './auth-provider';
 
 const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.mkv', '.webm'];
@@ -91,6 +91,12 @@ export function ProjectsSection() {
   const [progress, setProgress] = useState<number | null>(null);
   const [stage, setStage] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Render's free service may be asleep. Wake it while the visitor signs in
+    // or chooses a file, rather than making the first upload wait for startup.
+    void warmCutter().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (loading || !user) return;

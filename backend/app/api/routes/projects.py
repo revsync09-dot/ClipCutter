@@ -40,6 +40,7 @@ MAX_DURATION_SECONDS = 8 * 60 * 60
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 PUBLIC_UPLOAD_CHUNK_LIMIT = 24 * 1024 * 1024
+PUBLIC_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 _chunk_upload_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -188,10 +189,13 @@ async def initialize_chunked_upload(payload: ChunkedUploadInit) -> dict[str, obj
         "original_name": original_name,
         "extension": extension,
         "size": payload.size,
+        "chunk_size": PUBLIC_UPLOAD_CHUNK_BYTES,
+        "received_offsets": [],
+        "received_bytes": 0,
     }
     await asyncio.to_thread(part_path.touch, exist_ok=False)
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
-    return {"upload_id": upload_id, "received_bytes": 0, "chunk_size": 16 * 1024 * 1024}
+    return {"upload_id": upload_id, "received_bytes": 0, "chunk_size": PUBLIC_UPLOAD_CHUNK_BYTES}
 
 
 @router.put("/upload/{upload_id}/chunk")
@@ -200,25 +204,37 @@ async def append_upload_chunk(
     request: Request,
     offset: int = Query(ge=0),
 ) -> dict[str, int]:
-    metadata, part_path, _ = _load_chunk_upload(upload_id)
+    metadata, part_path, metadata_path = _load_chunk_upload(upload_id)
     body = await request.body()
     if not body or len(body) > PUBLIC_UPLOAD_CHUNK_LIMIT:
         raise HTTPException(status_code=413, detail="Upload-Block ist leer oder zu groß.")
+    expected_size = int(metadata["size"])
+    chunk_size = int(metadata.get("chunk_size") or PUBLIC_UPLOAD_CHUNK_BYTES)
+    expected_chunk_size = min(chunk_size, expected_size - offset)
+    if offset >= expected_size or offset % chunk_size != 0 or len(body) != expected_chunk_size:
+        raise HTTPException(status_code=413, detail="Die Upload-Blockgröße oder Position ist ungültig.")
     lock = _chunk_upload_locks.setdefault(upload_id, asyncio.Lock())
     async with lock:
-        current_size = part_path.stat().st_size if part_path.exists() else 0
-        # A response can be lost after a successful write. Returning the known
-        # offset makes the browser resume instead of duplicating the block.
-        if offset < current_size:
-            return {"received_bytes": current_size}
-        if offset != current_size:
-            raise HTTPException(status_code=409, detail={"received_bytes": current_size})
-        expected_size = int(metadata["size"])
-        if current_size + len(body) > expected_size or current_size + len(body) > MAX_UPLOAD_BYTES:
+        # Reload under the upload lock because several blocks can arrive at the
+        # same time. Each block is written at its own offset, which lets modern
+        # browsers use three parallel connections instead of waiting for every
+        # 8 MB round trip sequentially.
+        metadata, part_path, metadata_path = _load_chunk_upload(upload_id)
+        received_offsets = {int(value) for value in metadata.get("received_offsets", [])}
+        received_bytes = int(metadata.get("received_bytes") or 0)
+        if offset in received_offsets:
+            return {"received_bytes": received_bytes}
+        if received_bytes + len(body) > expected_size or received_bytes + len(body) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="Die Upload-Größe stimmt nicht mit der Datei überein.")
-        async with aiofiles.open(part_path, "ab") as output:
+        async with aiofiles.open(part_path, "r+b") as output:
+            await output.seek(offset)
             await output.write(body)
-        return {"received_bytes": current_size + len(body)}
+        received_offsets.add(offset)
+        received_bytes += len(body)
+        metadata["received_offsets"] = sorted(received_offsets)
+        metadata["received_bytes"] = received_bytes
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+        return {"received_bytes": received_bytes}
 
 
 @router.post("/upload/{upload_id}/complete", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -228,8 +244,16 @@ async def complete_chunked_upload(
 ) -> Project:
     metadata, part_path, metadata_path = _load_chunk_upload(upload_id)
     expected_size = int(metadata["size"])
-    if not part_path.is_file() or part_path.stat().st_size != expected_size:
-        received = part_path.stat().st_size if part_path.exists() else 0
+    chunk_size = int(metadata.get("chunk_size") or PUBLIC_UPLOAD_CHUNK_BYTES)
+    expected_offsets = set(range(0, expected_size, chunk_size))
+    received_offsets = {int(value) for value in metadata.get("received_offsets", [])}
+    received = int(metadata.get("received_bytes") or 0)
+    if (
+        not part_path.is_file()
+        or part_path.stat().st_size != expected_size
+        or received != expected_size
+        or received_offsets != expected_offsets
+    ):
         raise HTTPException(status_code=409, detail={"received_bytes": received, "expected_bytes": expected_size})
     project_id = str(uuid4())
     extension = str(metadata["extension"])
