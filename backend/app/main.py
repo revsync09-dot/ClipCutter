@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="ClipForge Cutter API",
     description="Authenticated video processing services for ClipForge Cutter.",
-    version="0.1.0",
+    version="0.1.1",
     lifespan=lifespan,
 )
 app.add_middleware(
