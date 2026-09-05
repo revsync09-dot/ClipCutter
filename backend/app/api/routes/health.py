@@ -8,7 +8,7 @@ router = APIRouter(tags=["system"])
 
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", service="ClipForge Cutter", version="0.1.1")
+    return HealthResponse(status="ok", service="ClipForge Cutter", version="0.1.2")
 
 
 @router.get("/system/status", response_model=SystemStatus)

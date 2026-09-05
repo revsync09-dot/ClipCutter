@@ -40,7 +40,7 @@ MAX_DURATION_SECONDS = 8 * 60 * 60
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 PUBLIC_UPLOAD_CHUNK_LIMIT = 24 * 1024 * 1024
-PUBLIC_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
+PUBLIC_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024
 _chunk_upload_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -217,8 +217,8 @@ async def append_upload_chunk(
     async with lock:
         # Reload under the upload lock because several blocks can arrive at the
         # same time. Each block is written at its own offset, which lets modern
-        # browsers use three parallel connections instead of waiting for every
-        # 8 MB round trip sequentially.
+        # browsers fill several connections instead of waiting for every round
+        # trip sequentially. Small blocks also make slow uploads cheap to retry.
         metadata, part_path, metadata_path = _load_chunk_upload(upload_id)
         received_offsets = {int(value) for value in metadata.get("received_offsets", [])}
         received_bytes = int(metadata.get("received_bytes") or 0)

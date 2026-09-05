@@ -523,7 +523,9 @@ async function uploadVideoInChunks(
       await sendChunk(chunk);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, () => worker()));
+  // Six is the practical per-origin browser limit and gives slow residential
+  // upload connections enough work without overloading the free 512 MB worker.
+  await Promise.all(Array.from({ length: Math.min(6, chunks.length) }, () => worker()));
   onProgress(100);
   const completed = await authFetch(
     `${API_BASE_URL}/projects/upload/${encodeURIComponent(upload.upload_id)}/complete`,

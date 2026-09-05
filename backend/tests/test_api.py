@@ -72,7 +72,7 @@ def test_chunk_upload_accepts_parallel_out_of_order_blocks(tmp_path, monkeypatch
     app.dependency_overrides[get_current_user] = authenticated_user
     try:
         with TestClient(app) as client:
-            size = 10 * 1024 * 1024
+            size = 5 * 1024 * 1024
             initialized = client.post(
                 "/api/projects/upload/init",
                 json={"filename": "parallel.mp4", "content_type": "video/mp4", "size": size},
@@ -80,24 +80,20 @@ def test_chunk_upload_accepts_parallel_out_of_order_blocks(tmp_path, monkeypatch
             assert initialized.status_code == 201
             upload = initialized.json()
             chunk_size = upload["chunk_size"]
-            second = b"b" * (size - chunk_size)
-            first = b"a" * chunk_size
-            second_response = client.put(
-                f"/api/projects/upload/{upload['upload_id']}/chunk?offset={chunk_size}",
-                content=second,
-                headers={"content-type": "application/octet-stream"},
-            )
-            first_response = client.put(
-                f"/api/projects/upload/{upload['upload_id']}/chunk?offset=0",
-                content=first,
-                headers={"content-type": "application/octet-stream"},
-            )
-            assert second_response.status_code == 200
-            assert first_response.status_code == 200
+            chunks = [
+                bytes([97 + index]) * min(chunk_size, size - offset)
+                for index, offset in enumerate(range(0, size, chunk_size))
+            ]
+            offsets = list(range(0, size, chunk_size))
+            for offset, chunk in reversed(list(zip(offsets, chunks, strict=True))):
+                response = client.put(
+                    f"/api/projects/upload/{upload['upload_id']}/chunk?offset={offset}",
+                    content=chunk,
+                    headers={"content-type": "application/octet-stream"},
+                )
+                assert response.status_code == 200
             part_path, _ = _chunk_upload_paths(upload["upload_id"])
-            with part_path.open("rb") as uploaded:
-                assert uploaded.read(chunk_size) == first
-                assert uploaded.read() == second
+            assert part_path.read_bytes() == b"".join(chunks)
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
