@@ -72,6 +72,15 @@ def test_cors_origin_list_is_explicit() -> None:
     assert config.allowed_origins == ["https://clipforge.example", "http://localhost:5173"]
 
 
+def test_production_cors_includes_stable_vercel_aliases() -> None:
+    config = Settings(env="production", cors_origins="https://clipforge.example")
+    assert config.allowed_origins == [
+        "https://clipforge.example",
+        "https://frontend-mu-flame-44.vercel.app",
+        "https://frontend-red-thzs-projects.vercel.app",
+    ]
+
+
 def test_owner_requires_matching_id_and_exact_email() -> None:
     config = Settings(owner_user_ids="owner-id", owner_emails="subhan.qasimi112@gmail.com")
     assert config.is_owner("owner-id", "SUBHAN.QASIMI112@gmail.com") is True

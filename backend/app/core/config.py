@@ -35,7 +35,19 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        return [value.strip().rstrip("/") for value in self.cors_origins.split(",") if value.strip()]
+        origins = [value.strip().rstrip("/") for value in self.cors_origins.split(",") if value.strip()]
+        if self.env.casefold() == "production":
+            # Vercel's production aliases stay stable even when an individual
+            # deployment URL changes. Keep both aliases explicit so browsers
+            # may upload directly to the Render cutter without opening CORS to
+            # arbitrary third-party sites.
+            origins.extend(
+                (
+                    "https://frontend-mu-flame-44.vercel.app",
+                    "https://frontend-red-thzs-projects.vercel.app",
+                )
+            )
+        return list(dict.fromkeys(origins))
 
     def is_owner(self, user_id: str, email: str | None) -> bool:
         allowed_ids = {value.strip() for value in self.owner_user_ids.split(",") if value.strip()}
