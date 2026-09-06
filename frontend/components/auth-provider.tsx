@@ -4,6 +4,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { sendPresenceHeartbeat } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { authCallbackUrl } from '../lib/api-config';
 
 type AuthContextValue = {
   session: Session | null;
@@ -75,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        options: { emailRedirectTo: authCallbackUrl() },
       });
       if (error) throw error;
       if (!data.user) throw new Error('Das Konto konnte nicht erstellt werden. Bitte erneut versuchen.');
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        options: { emailRedirectTo: authCallbackUrl() },
       });
       if (error) throw error;
     },

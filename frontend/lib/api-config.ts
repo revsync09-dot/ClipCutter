@@ -56,7 +56,11 @@ export function videoServiceHttpsRequiredMessage(): string {
 }
 
 export function authCallbackUrl(): string {
-  return `${window.location.origin}/auth/callback`;
+  const productionOrigin = 'https://frontend-mu-flame-44.vercel.app';
+  const origin = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? window.location.origin
+    : productionOrigin;
+  return `${origin}/auth/callback`;
 }
 
 export function supabaseAuthMessage(error: { message: string; status?: number }): string {
