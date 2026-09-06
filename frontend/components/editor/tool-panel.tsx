@@ -99,7 +99,8 @@ const platforms: [Platform, string, string, typeof Smartphone][] = [
   ["youtube", "YouTube Video", "16:9 · 1920×1080", RectangleHorizontal],
 ];
 const layouts: [LayoutMode, string, string][] = [
-  ["reaction_top", "Reaction oben", "Reaction oben · Hauptvideo unten"],
+  ["main_focus", "Main groß", "Hauptvideo dominant · Reaction kompakt oben"],
+  ["reaction_top", "Reaction oben", "Reaction groß · Hauptvideo unten"],
   ["main_top", "Hauptvideo oben", "Hauptvideo oben · Reaction unten"],
   [
     "picture_in_picture",
@@ -109,6 +110,7 @@ const layouts: [LayoutMode, string, string][] = [
   ["blur_center", "Fokus", "Hauptvideo mittig auf Blur-Hintergrund"],
 ];
 const layoutPreviewFiles: Record<LayoutMode, string> = {
+  main_focus: "reaction-top.jpg",
   reaction_top: "reaction-top.jpg",
   main_top: "main-top.jpg",
   picture_in_picture: "picture-in-picture.jpg",
@@ -1488,7 +1490,7 @@ export function ToolPanel({
   const [fps, setFps] = useState<"original" | "30" | "60">("original");
   const [filename, setFilename] = useState("clipforge-short");
   const {platform,setPlatform,layout,setLayout,captions,setCaptions,headline,setHeadline,secondaryHeadline,setSecondaryHeadline,headlineEnabled,setHeadlineEnabled,secondaryHeadlineEnabled,setSecondaryHeadlineEnabled,ownerSafeLayout,setOwnerSafeLayout,headlineStyle,setHeadlineStyle,headlinePosition,setHeadlinePosition,headlineSize,setHeadlineSize,headlineFont,setHeadlineFont,headlineTextColor,setHeadlineTextColor,headlineBackgroundColor,setHeadlineBackgroundColor,headlineX,setHeadlineX,headlineY,setHeadlineY,secondaryHeadlineX,setSecondaryHeadlineX,secondaryHeadlineY,setSecondaryHeadlineY,blurStrength,setBlurStrength,backgroundDim,setBackgroundDim,mainX,setMainX,mainY,setMainY,mainScale,setMainScale,reactionX,setReactionX,reactionY,setReactionY,reactionScale,setReactionScale,frameX,setFrameX,frameY,setFrameY,frameScale,setFrameScale}=useEditorDesign();
-  const chooseLayout = (value: LayoutMode) => { setLayout(value); setMainScale(1); setReactionScale(1); setFrameScale(1); if(value==='reaction_top'){setMainX(50);setMainY(72);setReactionX(50);setReactionY(22);setFrameX(50);setFrameY(22);}else if(value==='main_top'){setMainX(50);setMainY(22);setReactionX(50);setReactionY(72);setFrameX(50);setFrameY(72);}else if(value==='picture_in_picture'){setMainX(50);setMainY(50);setReactionX(79);setReactionY(18);setFrameX(79);setFrameY(18);}else{setMainX(50);setMainY(50);setReactionX(50);setReactionY(50);setFrameX(50);setFrameY(50);} };
+  const chooseLayout = (value: LayoutMode) => { setLayout(value); setMainScale(1); setReactionScale(1); setFrameScale(1); if(value==='reaction_top'||value==='main_focus'){setMainX(50);setMainY(72);setReactionX(50);setReactionY(18);setFrameX(50);setFrameY(18);}else if(value==='main_top'){setMainX(50);setMainY(22);setReactionX(50);setReactionY(72);setFrameX(50);setFrameY(72);}else if(value==='picture_in_picture'){setMainX(50);setMainY(50);setReactionX(79);setReactionY(18);setFrameX(79);setFrameY(18);}else{setMainX(50);setMainY(50);setReactionX(50);setReactionY(50);setFrameX(50);setFrameY(50);} };
   const [mainFormat, setMainFormat] = useState<MainFormat>("source");
   const [isOwner, setIsOwner] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -1905,7 +1907,7 @@ export function ToolPanel({
                           className="absolute inset-0 h-full w-full object-cover"
                         />
                         <span className="absolute inset-0 bg-gradient-to-t from-ink/45 via-transparent to-transparent" />
-                        <span className="absolute bottom-2 left-2 rounded-md bg-ink/75 px-1.5 py-1 text-[6px] font-extrabold tracking-[.1em] text-white backdrop-blur-sm">{value === "picture_in_picture" ? "PIP" : value === "blur_center" ? "FOCUS" : value === "reaction_top" ? "REACTION ↑" : "MAIN ↑"}</span>
+                        <span className="absolute bottom-2 left-2 rounded-md bg-ink/75 px-1.5 py-1 text-[6px] font-extrabold tracking-[.1em] text-white backdrop-blur-sm">{value === "picture_in_picture" ? "PIP" : value === "blur_center" ? "FOCUS" : value === "main_focus" ? "MAIN + REACTION" : value === "reaction_top" ? "REACTION ↑" : "MAIN ↑"}</span>
                       </span>
                       <strong className="mt-2.5 block text-xs">{label}</strong>
                       <span className="mt-1 block text-[9px] leading-4 text-muted">

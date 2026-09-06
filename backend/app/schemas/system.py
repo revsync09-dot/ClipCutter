@@ -11,6 +11,7 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
+    r2_enabled: bool = False
 
 
 class SystemStatus(BaseModel):

@@ -25,6 +25,7 @@ from backend.app.services.transcription import transcribe_video
 from backend.app.services.clip_analysis import analyze_best_clips
 from backend.app.services.headlines import generate_dual_headlines
 from backend.app.services.video import MediaInspectionError, analyze_reference_style, create_thumbnail, create_timeline_frame, inspect_video, synchronize_reaction
+from backend.app.services import r2_storage
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 ALLOWED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm"}
@@ -37,7 +38,7 @@ MIME_EXTENSIONS = {
     "video/webm": ".webm",
 }
 MAX_DURATION_SECONDS = 8 * 60 * 60
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024 * 1024
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 PUBLIC_UPLOAD_CHUNK_LIMIT = 24 * 1024 * 1024
 PUBLIC_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024
@@ -129,7 +130,7 @@ async def upload_project(
                 if total_bytes > MAX_UPLOAD_BYTES:
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="The video file is larger than the 50 GB local limit.",
+                        detail="Das Video darf maximal 10 GB groß sein.",
                     )
                 await output.write(chunk)
 
@@ -196,6 +197,86 @@ async def initialize_chunked_upload(payload: ChunkedUploadInit) -> dict[str, obj
     await asyncio.to_thread(part_path.touch, exist_ok=False)
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
     return {"upload_id": upload_id, "received_bytes": 0, "chunk_size": PUBLIC_UPLOAD_CHUNK_BYTES}
+
+
+@router.post("/upload/r2/init", status_code=status.HTTP_201_CREATED)
+async def initialize_r2_upload(payload: ChunkedUploadInit) -> dict[str, object]:
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="Direkter R2-Upload ist nicht konfiguriert.")
+    if payload.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Das Video darf maximal 10 GB groß sein.")
+    extension = _video_extension_from_metadata(payload.filename, payload.content_type)
+    if not extension:
+        raise HTTPException(status_code=415, detail="Bitte ein unterstütztes Video auswählen.")
+    part_size = r2_storage.settings.r2_part_size
+    part_count = (payload.size + part_size - 1) // part_size
+    if part_count < 1 or part_count > 10000:
+        raise HTTPException(status_code=413, detail="Die Datei kann nicht in zulässige R2-Teile aufgeteilt werden.")
+    key = f"uploads/{current_user().id}/{uuid4()}{extension}"
+    try:
+        upload = await asyncio.to_thread(r2_storage.start_multipart, key, payload.content_type, part_count)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Cloudflare R2 konnte den Upload nicht vorbereiten.") from exc
+    return {"upload_id": upload.upload_id, "key": upload.key, "part_size": upload.part_size, "parts": upload.part_urls}
+
+
+@router.post("/upload/r2/complete", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def complete_r2_upload(payload: dict[str, object], session: Session = Depends(get_session)) -> Project:
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="Direkter R2-Upload ist nicht konfiguriert.")
+    upload_id = str(payload.get("upload_id", ""))
+    key = str(payload.get("key", ""))
+    filename = Path(str(payload.get("filename", "video"))).name[:255]
+    parts = payload.get("parts")
+    owner_prefix = f"uploads/{current_user().id}/"
+    if not upload_id or not key.startswith(owner_prefix) or not isinstance(parts, list) or not parts:
+        raise HTTPException(status_code=422, detail="R2-Uploaddaten sind unvollständig.")
+    project_id = str(uuid4())
+    extension = Path(filename).suffix.lower()
+    video_path = (settings.storage_path / "uploads" / f"{project_id}{extension}").resolve()
+    thumbnail_path = (settings.storage_path / "thumbnails" / f"{project_id}.jpg").resolve()
+    saved = False
+    r2_completed = False
+    try:
+        await asyncio.to_thread(r2_storage.complete_multipart, upload_id, key, parts)
+        r2_completed = True
+        await asyncio.to_thread(r2_storage.download_to_path, key, video_path)
+        media = await asyncio.to_thread(inspect_video, video_path)
+        if media.duration > MAX_DURATION_SECONDS:
+            raise HTTPException(status_code=422, detail="Videos können bis zu 8 Stunden lang sein.")
+        await asyncio.to_thread(create_thumbnail, video_path, thumbnail_path, media.duration)
+        project = Project(id=project_id, owner_id=current_user().id, filename=video_path.name, original_filename=filename, status="Ready", duration=media.duration, width=media.width, height=media.height, fps=media.fps, codec=media.codec, thumbnail_path=str(thumbnail_path), video_path=str(video_path))
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        try:
+            await upsert_project(project, current_user())
+        except Exception:
+            pass
+        saved = True
+        return project
+    except MediaInspectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Das Video konnte aus Cloudflare R2 nicht übernommen werden.") from exc
+    finally:
+        if saved:
+            try:
+                await asyncio.to_thread(r2_storage.delete_object, key)
+            except Exception:
+                pass
+        else:
+            try:
+                if r2_completed:
+                    await asyncio.to_thread(r2_storage.delete_object, key)
+                else:
+                    await asyncio.to_thread(r2_storage.abort_multipart, upload_id, key)
+            except Exception:
+                pass
+            video_path.unlink(missing_ok=True)
+            thumbnail_path.unlink(missing_ok=True)
 
 
 @router.put("/upload/{upload_id}/chunk")
@@ -359,7 +440,7 @@ async def upload_reference_video(
             while chunk := await file.read(UPLOAD_CHUNK_BYTES):
                 total_bytes += len(chunk)
                 if total_bytes > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="The reference video is larger than the 50 GB local limit.")
+                    raise HTTPException(status_code=413, detail="Das Referenzvideo darf maximal 10 GB groß sein.")
                 await output.write(chunk)
         profile = analyze_reference_style(reference_path)
         payload = {"filename": original_name, **profile}
@@ -394,7 +475,7 @@ async def upload_reaction_video(
             while chunk := await file.read(UPLOAD_CHUNK_BYTES):
                 total_bytes += len(chunk)
                 if total_bytes > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="The reaction video is larger than the 50 GB local limit.")
+                    raise HTTPException(status_code=413, detail="Das Reaction-Video darf maximal 10 GB groß sein.")
                 await output.write(chunk)
         # ffprobe and the full audio correlation are CPU/process-heavy. Running
         # them off the async event loop keeps the API responsive while large

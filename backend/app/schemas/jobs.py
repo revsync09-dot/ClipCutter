@@ -45,7 +45,7 @@ class RenderRequest(BaseModel):
     caption_y: float = Field(default=68, ge=5, le=95)
     caption_size: int = Field(default=88, ge=36, le=140)
     platform: Literal["tiktok", "instagram", "shorts", "youtube"] = "shorts"
-    layout: Literal["standard", "blur_center", "reaction_top", "main_top", "picture_in_picture"] = "reaction_top"
+    layout: Literal["standard", "blur_center", "reaction_top", "main_focus", "main_top", "picture_in_picture"] = "reaction_top"
     headline: str = Field(default="", max_length=120)
     headline_style: Literal["clean", "dark", "capsule", "bubble", "glass", "minimal"] = "clean"
     headline_position: Literal["split", "top", "bottom"] = "split"

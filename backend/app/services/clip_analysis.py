@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from sqlalchemy import delete, select
 
 from backend.app.core.database import SessionLocal
 from backend.app.core.config import settings
-from backend.app.models import Clip, Transcript
+from backend.app.models import Clip, Project, Transcript
 from backend.app.services.rendering import ProgressCallback
-from backend.app.services.video import MediaInspectionError
+from backend.app.services.video import MediaInspectionError, _audio_envelope, reaction_activity_score
 from backend.app.services.headlines import generate_social_headline
 
 
@@ -32,6 +33,7 @@ def _similarity(left: str, right: str) -> float:
 
 def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: str = "shorts") -> dict[str, str | None]:
     with SessionLocal() as session:
+        project = session.get(Project, project_id)
         transcript = session.scalar(select(Transcript).where(Transcript.project_id == project_id))
         if not transcript:
             raise MediaInspectionError("Create a transcript before starting Smart Cut")
@@ -51,6 +53,18 @@ def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: st
     content_start = min(float(item["start"]) for item in segments)
     content_end = max(float(item["end"]) for item in segments)
     content_duration = max(content_end - content_start, 1.0)
+    reaction_envelope = None
+    reaction_offset = 0.0
+    reaction_profile = (settings.storage_path / "reactions" / f"{project_id}.json").resolve()
+    if project and reaction_profile.is_file():
+        try:
+            reaction_data = json.loads(reaction_profile.read_text(encoding="utf-8"))
+            reaction_path = Path(str(reaction_data.get("path", ""))).resolve()
+            if reaction_path.is_file():
+                reaction_offset = float(reaction_data.get("offset_seconds", 0.0))
+                reaction_envelope = _audio_envelope(reaction_path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError, MediaInspectionError):
+            reaction_envelope = None
     # One-hour uploads yield ten strong options. The target grows gradually to
     # fifteen for an eight-hour stream so the gallery stays focused on only the
     # strongest moments.
@@ -93,6 +107,13 @@ def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: st
             early_hook = 8 if any(re.search(rf"\b{re.escape(term)}\b", opening) for term in HOOK_TERMS) else 0
             opening_question = 7 if "?" in opening else 0
             closing_answer = 5 if any(term in closing for term in PAYOFF_TERMS | {"fehler", "falsch", "wahr", "klar", "definitiv"}) else 0
+            reaction_score = 0.0
+            if reaction_envelope is not None:
+                reaction_score = reaction_activity_score(
+                    reaction_envelope,
+                    float(first["start"]) + reaction_offset,
+                    end + reaction_offset,
+                )
             previous_gap = float(first["start"]) - float(segments[index - 1]["end"]) if index else 10.0
             boundary_bonus = 5 if previous_gap >= 1.0 else 0
             unique_lines = len({part.casefold() for part in text_parts})
@@ -115,6 +136,7 @@ def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: st
                 + opening_question
                 + closing_answer
                 + boundary_bonus
+                + reaction_score * 18
                 - filler_penalty
                 - repetition_penalty
             )
@@ -123,6 +145,7 @@ def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: st
                 "end": end + 0.25,
                 "text": joined,
                 "score": max(1, min(score, 99)),
+                "reaction_score": reaction_score,
             })
     if not candidates:
         raise MediaInspectionError("Not enough continuous speech was found for a short clip")
@@ -174,7 +197,11 @@ def analyze_best_clips(project_id: str, progress: ProgressCallback, platform: st
                 title=title[:255],
                 hook=text[:320],
                 score=int(item["score"]),
-                reason=f"Vollständiger Gesprächsbogen mit verständlichem Einstieg, Aufbau und Payoff; für {platform} auf etwa {round(target_duration)} Sekunden verdichtet.",
+                reason=(
+                    f"Vollständiger Gesprächsbogen mit verständlichem Einstieg, Aufbau und Payoff; "
+                    f"für {platform} auf etwa {round(target_duration)} Sekunden verdichtet. "
+                    + ("Reaction-Sprache und sichtbare Antwort im selben Zeitfenster priorisiert." if float(item.get("reaction_score", 0)) >= 0.35 else "")
+                ),
             ))
         session.commit()
     progress(99, "Smart cuts are ready")

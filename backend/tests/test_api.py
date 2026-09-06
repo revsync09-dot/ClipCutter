@@ -12,7 +12,7 @@ from backend.app.core.config import Settings
 from backend.app.schemas.jobs import RenderRequest
 from backend.app.services.rendering import _frame_opening, _has_audio_stream, _headline_metrics, _write_ass_captions, _write_headline_ass
 from backend.app.services.headlines import generate_dual_headlines, generate_social_headline
-from backend.app.services.video import _correlate_audio_envelopes
+from backend.app.services.video import _correlate_audio_envelopes, reaction_activity_score
 from backend.app.services.presence import client_ip
 from backend.app.core.media_tokens import create_media_token, verify_media_token
 from backend.app.core.auth import AuthenticatedUser, _current_user, get_current_user
@@ -23,6 +23,13 @@ import cv2
 
 def test_reaction_audio_probe_rejects_missing_file(tmp_path) -> None:
     assert _has_audio_stream(tmp_path / "missing.mp4") is False
+
+
+def test_reaction_activity_score_prefers_spoken_window() -> None:
+    envelope = np.zeros(500, dtype=np.float32)
+    envelope[100:300] = 1.0
+    assert reaction_activity_score(envelope, 1.0, 3.0) > 0.9
+    assert reaction_activity_score(envelope, 0.0, 1.0) == 0.0
 
 
 def test_frame_opening_detects_enclosed_transparent_area(tmp_path) -> None:

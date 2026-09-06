@@ -4,7 +4,7 @@ import { ChangeEvent, DragEvent, FormEvent, useCallback, useEffect, useRef, useS
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUpFromLine, Check, Film, LoaderCircle, Plus, TriangleAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Project, getProjects, projectMediaUrl, uploadVideo, warmCutter } from '../lib/api';
+import { MAX_VIDEO_BYTES, Project, getProjects, projectMediaUrl, uploadVideo, warmCutter } from '../lib/api';
 import { useAuth } from './auth-provider';
 
 const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.mkv', '.webm'];
@@ -111,6 +111,7 @@ export function ProjectsSection() {
 
   const startUpload = useCallback(async (file?: File) => {
     if (!file) return;
+    if (file.size > MAX_VIDEO_BYTES) { setError('Das Video darf maximal 10 GB groß sein.'); return; }
     const extension = getSupportedExtension(file);
     if (!extension) { setError(`„${file.name}“ wurde nicht als MP4-, MOV-, MKV- oder WebM-Video erkannt.`); return; }
     const trimmedName = file.name.trim();

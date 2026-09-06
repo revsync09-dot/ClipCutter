@@ -161,6 +161,21 @@ def _audio_envelope(video_path: Path, seconds: float | None = None) -> np.ndarra
     return envelope / max(scale, 1e-8)
 
 
+def reaction_activity_score(envelope: np.ndarray, start: float, end: float) -> float:
+    """Estimate whether a synchronized reaction window contains speech or action."""
+    first = max(0, int(start * 50))
+    last = min(len(envelope), int(end * 50))
+    if last <= first:
+        return 0.0
+    window = np.abs(envelope[first:last])
+    if len(window) < 25:
+        return 0.0
+    quiet = float(np.percentile(window, 35))
+    active = float(np.percentile(window, 75))
+    spread = max(float(np.percentile(window, 95)) - quiet, 1e-6)
+    return max(0.0, min(1.0, (active - quiet) / spread))
+
+
 def _correlate_audio_envelopes(main: np.ndarray, reaction: np.ndarray) -> tuple[float, float]:
     size = len(main) + len(reaction) - 1
     fft_size = 1 << (size - 1).bit_length()

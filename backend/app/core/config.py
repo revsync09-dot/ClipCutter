@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     owner_emails: str = ""
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
     media_signing_secret: str = ""
+    r2_endpoint: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+    r2_part_size: int = 64 * 1024 * 1024
+    r2_url_expiry: int = 3600
 
     @property
     def allowed_origins(self) -> list[str]:

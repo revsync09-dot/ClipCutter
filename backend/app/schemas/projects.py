@@ -23,7 +23,7 @@ class ProjectResponse(BaseModel):
 class ChunkedUploadInit(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(default="application/octet-stream", max_length=100)
-    size: int = Field(gt=0, le=50 * 1024 * 1024 * 1024)
+    size: int = Field(gt=0, le=10 * 1024 * 1024 * 1024)
 
 
 class ReferenceStyleResponse(BaseModel):

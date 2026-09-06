@@ -4,6 +4,8 @@
 
 `Browser -> Vercel (Next.js frontend) -> HTTPS FastAPI service -> FFmpeg / faster-whisper -> persistent /data volume + Supabase metadata`
 
+Large source videos use a direct multipart path in production: `Browser -> Cloudflare R2 -> FastAPI finalize -> persistent /data -> FFmpeg`. R2 is a transfer buffer; the backend still needs persistent disk because FFmpeg and Whisper run on the Python host.
+
 The Python video service cannot run as a normal Vercel serverless function. It needs a long-running Docker host with FFmpeg, enough CPU/RAM for Whisper, and a persistent volume mounted at `/data`. A temporary Cloudflare tunnel is useful only for development and is not a production backend.
 
 ## Vercel variables
@@ -32,7 +34,14 @@ CLIPFORGE_OWNER_EMAILS=YOUR_OWNER_EMAIL
 CLIPFORGE_DATABASE_PATH=/data/database/clipforge.db
 CLIPFORGE_STORAGE_PATH=/data/storage
 CLIPFORGE_WHISPER_CPU_MODEL=base
+CLIPFORGE_R2_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+CLIPFORGE_R2_ACCESS_KEY_ID=YOUR_R2_ACCESS_KEY_ID
+CLIPFORGE_R2_SECRET_ACCESS_KEY=YOUR_R2_SECRET_ACCESS_KEY
+CLIPFORGE_R2_BUCKET=YOUR_R2_BUCKET_NAME
+CLIPFORGE_R2_PART_SIZE=67108864
 ```
+
+Create an R2 bucket CORS policy allowing the Vercel origin to `PUT` objects and expose the `ETag` response header. Allow `Content-Type` and `*` request headers. The R2 access key needs Object Read, Object Write and Object Delete for this bucket.
 
 The host must preserve `/data`. Start command outside Docker:
 

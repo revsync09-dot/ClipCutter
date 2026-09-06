@@ -4,7 +4,7 @@ import { createContext, ReactNode, useContext, useState } from 'react';
 import { CaptionAnimation, CaptionStyle, HeadlineFont, HeadlinePosition, HeadlineStyle } from '../../lib/api';
 
 export type Platform = 'tiktok' | 'instagram' | 'shorts' | 'youtube';
-export type LayoutMode = 'reaction_top' | 'main_top' | 'picture_in_picture' | 'blur_center';
+export type LayoutMode = 'reaction_top' | 'main_focus' | 'main_top' | 'picture_in_picture' | 'blur_center';
 export type CaptionSettings = { enabled:boolean; style:CaptionStyle; uppercase:boolean; words:number; animation:CaptionAnimation; x:number; y:number; size:number };
 
 type EditorDesign = {

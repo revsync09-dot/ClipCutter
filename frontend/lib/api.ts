@@ -109,6 +109,7 @@ export type RenderOptions = {
     | "standard"
     | "blur_center"
     | "reaction_top"
+    | "main_focus"
     | "main_top"
     | "picture_in_picture";
   headline: string;
@@ -179,6 +180,7 @@ export type OwnerOverview = {
   recent_projects: { id: string; name: string; status: string; created_at: string }[];
 };
 export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+export const MAX_VIDEO_BYTES = 10 * 1024 * 1024 * 1024;
 export function absoluteApiUrl(path: string, mediaToken?: string): string {
   const raw = path.startsWith("http") ? path : `${API_ORIGIN}${path}`;
   if (!mediaToken) return raw;
@@ -457,6 +459,9 @@ export function uploadVideo(
   onProgress: (progress: number) => void,
   uploadName = file.name,
 ): Promise<Project> {
+  if (file.size > MAX_VIDEO_BYTES) {
+    return Promise.reject(new Error('Das Video darf maximal 10 GB groß sein.'));
+  }
   // Every source video travels in independently retryable blocks. The backend
   // accepts blocks out of order, so several connections can use the available
   // upload bandwidth instead of waiting for a round trip after every block.
@@ -474,6 +479,17 @@ async function uploadVideoInChunks(
   onProgress: (progress: number) => void,
   uploadName: string,
 ): Promise<Project> {
+  try {
+    return await uploadVideoToR2(file, onProgress, uploadName);
+  } catch (reason) {
+    // Local development and older backends use the resumable API upload.
+    // Once R2 has accepted an upload, surface failures instead of duplicating
+    // several gigabytes through a second transport.
+    if (!(reason instanceof Error) || !reason.message.startsWith('R2_NOT_CONFIGURED')) throw reason;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Der direkte Cloudflare-R2-Upload ist im Produktions-Backend nicht aktiviert. Bitte R2-Variablen setzen und das Backend neu deployen.');
+    }
+  }
   onProgress(1);
   const initialized = await authFetch(`${API_BASE_URL}/projects/upload/init`, {
     method: 'POST',
@@ -533,4 +549,54 @@ async function uploadVideoInChunks(
   );
   if (!completed.ok) throw new Error(await parseError(completed));
   return completed.json() as Promise<Project>;
+}
+
+async function uploadVideoToR2(file: File, onProgress: (progress: number) => void, uploadName: string): Promise<Project> {
+  const initialized = await authFetch(`${API_BASE_URL}/projects/upload/r2/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: uploadName, content_type: file.type, size: file.size }),
+  });
+  if (initialized.status === 404 || initialized.status === 503) throw new Error('R2_NOT_CONFIGURED');
+  if (!initialized.ok) throw new Error(await parseError(initialized));
+  const upload = await initialized.json() as { upload_id: string; key: string; part_size: number; parts: { part_number: number; url: string }[] };
+  let completedBytes = 0;
+  let nextPart = 0;
+  const completed: { part_number: number; etag: string }[] = [];
+  const sendPart = async (part: { part_number: number; url: string }) => {
+    const start = (part.part_number - 1) * upload.part_size;
+    const body = file.slice(start, Math.min(start + upload.part_size, file.size));
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        response = await fetch(part.url, { method: 'PUT', body });
+        if (response.ok) break;
+      } catch {
+        response = null;
+      }
+      if (attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 700 * (attempt + 1)));
+    }
+    if (!response?.ok) throw new Error('Ein R2-Upload-Block konnte nicht übertragen werden.');
+    const etag = response.headers.get('ETag');
+    if (!etag) throw new Error('R2 hat keinen ETag für den Upload-Block zurückgegeben.');
+    completed.push({ part_number: part.part_number, etag });
+    completedBytes += body.size;
+    onProgress(Math.min(99, Math.max(2, Math.round((completedBytes / file.size) * 100))));
+  };
+  const worker = async () => {
+    while (nextPart < upload.parts.length) {
+      const part = upload.parts[nextPart];
+      nextPart += 1;
+      await sendPart(part);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, upload.parts.length) }, () => worker()));
+  const completedResponse = await authFetch(`${API_BASE_URL}/projects/upload/r2/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ upload_id: upload.upload_id, key: upload.key, filename: uploadName, parts: completed }),
+  });
+  if (!completedResponse.ok) throw new Error(await parseError(completedResponse));
+  onProgress(100);
+  return completedResponse.json() as Promise<Project>;
 }

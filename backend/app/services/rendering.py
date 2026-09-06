@@ -207,10 +207,10 @@ def render_vertical_clip(
         layout = "reaction_top"
     filters: list[str] = []
     split_center_y: int | None = None
-    stacked_layout = reaction_path is not None and layout in {"reaction_top", "main_top"}
+    stacked_layout = reaction_path is not None and layout in {"reaction_top", "main_focus", "main_top"}
     if stacked_layout:
         if output_height > output_width:
-            top_height = int(output_height * (0.40 if social_safe_layout else 0.44))
+            top_height = int(output_height * (0.40 if social_safe_layout else 0.34 if layout == "main_focus" else 0.38))
             bottom_height = output_height - top_height
         else:
             top_height = output_height // 2
@@ -232,7 +232,7 @@ def render_vertical_clip(
         # unused pixel is supplied by the blurred full-canvas background.
         reaction_height = reaction_capacity
         main_height = output_height - reaction_height
-        main_y = reaction_height if layout == "reaction_top" else 0
+        main_y = int(output_height * 0.42) if layout == "main_focus" else int(output_height * 0.38) if layout == "reaction_top" else 0
         reaction_y = 0 if layout == "reaction_top" else main_height
         split_center_y = main_y if layout == "reaction_top" else reaction_y
         frame_x = (output_width - frame_width) // 2
@@ -259,9 +259,9 @@ def render_vertical_clip(
             "[0:v]split=2[fullbackground][mainforeground]",
             f"[fullbackground]scale={output_width}:{output_height}:force_original_aspect_ratio=increase,crop={output_width}:{output_height},boxblur={blur_strength}:{max(1, blur_strength // 4)},eq=brightness=-{background_dim / 200:.3f}[canvas]",
         ]
-        if main_format == "fill":
+        if main_format == "fill" or layout == "main_focus" or layout == "reaction_top":
             filters.append(
-                f"[mainforeground]scale={output_width}:{main_height}:force_original_aspect_ratio=increase,crop={output_width}:{main_height}[mainsharp]"
+            f"[mainforeground]scale={output_width}:{int(output_height * (0.34 if layout == 'main_focus' else 0.58))}:force_original_aspect_ratio=increase,crop={output_width}:{int(output_height * (0.34 if layout == 'main_focus' else 0.58))}[mainsharp]"
             )
         else:
             if main_format == "square":
@@ -275,7 +275,11 @@ def render_vertical_clip(
                 foreground_filter = f"scale={output_width}:{main_height}:force_original_aspect_ratio=decrease"
             filters.append(f"[mainforeground]{foreground_filter}[mainsharp]")
         main_video_y = main_y + (main_height - (foreground_height if main_format in {"square", "portrait"} else main_height)) // 2
-        if main_format == "source":
+        if layout == "main_focus":
+            main_overlay_y = str(int(output_height * 0.42))
+        elif layout == "reaction_top":
+            main_overlay_y = str(int(output_height * 0.38))
+        elif main_format == "source":
             main_overlay_y = f"{main_y}+{int(output_height * 0.025)}" if social_safe_layout else f"{main_y}+({main_height}-h)/2"
         else:
             main_overlay_y = str(main_video_y)
