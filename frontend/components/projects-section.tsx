@@ -116,9 +116,9 @@ export function ProjectsSection() {
     if (!extension) { setError(`„${file.name}“ wurde nicht als MP4-, MOV-, MKV- oder WebM-Video erkannt.`); return; }
     const trimmedName = file.name.trim();
     const uploadName = trimmedName.toLowerCase().endsWith(extension) ? trimmedName : `${trimmedName || 'video'}${extension}`;
-    setError(null); setProgress(0); setStage('Video wird sicher hochgeladen');
+    setError(null); setProgress(1); setStage('Verbindung zum sicheren Upload wird hergestellt');
     try {
-      const project = await uploadVideo(file, value => { setProgress(value); if (value >= 100) setStage('Video wird geprüft und vorbereitet'); }, uploadName);
+      const project = await uploadVideo(file, value => { setProgress(Math.max(1, value)); if (value >= 100) setStage('Video wird geprüft und vorbereitet'); else if (value > 2) setStage('Video wird sicher hochgeladen'); }, uploadName);
       setStage('Projekt ist bereit'); setProjects(current => [project, ...current]);
       window.setTimeout(() => router.push(`/project/${project.id}`), 350);
     } catch (uploadError) {
