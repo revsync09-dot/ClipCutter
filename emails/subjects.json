@@ -1,0 +1,26 @@
+{
+  "confirm-sign-up.html": {
+    "template": "Confirm sign up",
+    "subject": "Confirm your email — ClipForge"
+  },
+  "invite-user.html": {
+    "template": "Invite user",
+    "subject": "You're invited to ClipForge"
+  },
+  "magic-link.html": {
+    "template": "Magic link or OTP",
+    "subject": "Your sign-in link — ClipForge"
+  },
+  "change-email.html": {
+    "template": "Change email address",
+    "subject": "Confirm your email change — ClipForge"
+  },
+  "reset-password.html": {
+    "template": "Reset password",
+    "subject": "Reset your password — ClipForge"
+  },
+  "reauthentication.html": {
+    "template": "Reauthentication",
+    "subject": "Your verification code — ClipForge"
+  }
+}

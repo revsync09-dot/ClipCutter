@@ -1,0 +1,56 @@
+[
+  {
+    "id": "confirm-sign-up", "label": "Confirm sign up", "subject": "Confirm your email — ClipForge",
+    "preheader": "One last step before your first cut. Confirm your email to get started.",
+    "eyebrow": "CONFIRM YOUR ACCOUNT",
+    "headline": "Welcome to<br>Clip<span style=\"color:#b9a0ff;\">Forge.</span>",
+    "body": "Confirm your email address to save your projects and start creating your next great clip.",
+    "button": "Confirm email", "note": "Your first cut starts here.",
+    "security": "Didn't create a ClipForge account? You can safely ignore this email. No action is needed."
+  },
+  {
+    "id": "invite-user", "label": "Invite user", "subject": "You're invited to ClipForge",
+    "preheader": "Your invitation to create with ClipForge is here.",
+    "eyebrow": "YOU'RE ON THE LIST",
+    "headline": "You're invited<br>to Clip<span style=\"color:#b9a0ff;\">Forge.</span>",
+    "body": "You've been invited to create an account on ClipForge. Accept your invitation and start shaping your next story.",
+    "button": "Accept invitation", "note": "This invitation is intended for the recipient of this email.",
+    "security": "Not expecting an invitation? You can ignore this email. Only accept invitations you trust."
+  },
+  {
+    "id": "magic-link", "label": "Magic link or OTP", "subject": "Your sign-in link — ClipForge",
+    "preheader": "Use this secure link to return to your ClipForge account.",
+    "eyebrow": "BACK TO CREATING",
+    "headline": "Welcome back.<br><span style=\"color:#b9a0ff;\">Let's create.</span>",
+    "body": "Ready to pick up where you left off? Use the button below to sign in to your ClipForge account.",
+    "button": "Sign in to ClipForge", "note": "This is a single-use sign-in link. Keep it private.",
+    "security": "Didn't request this sign-in link? Ignore this email and don't share the link with anyone."
+  },
+  {
+    "id": "change-email", "label": "Change email address", "subject": "Confirm your email change — ClipForge",
+    "preheader": "Confirm the requested change to your ClipForge email address.",
+    "eyebrow": "ACCOUNT UPDATE",
+    "headline": "New email.<br><span style=\"color:#b9a0ff;\">Same creator.</span>",
+    "body": "We received a request to change your ClipForge email address to <strong style=\"color:#f8f5fc;word-break:break-all;\">{{ .NewEmail }}</strong>. Confirm this change below.",
+    "button": "Confirm email change", "note": "You may need to confirm the change from both your current and new inbox.",
+    "security": "Didn't request this change? Don't confirm it. Visit ClipForge directly to review your account security and contact support."
+  },
+  {
+    "id": "reset-password", "label": "Reset password", "subject": "Reset your password — ClipForge",
+    "preheader": "Choose a new password for your ClipForge account.",
+    "eyebrow": "LET'S GET YOU BACK IN",
+    "headline": "Reset your<br><span style=\"color:#b9a0ff;\">password.</span>",
+    "body": "We received a password reset request for your ClipForge account. Follow the link below to choose a new password.",
+    "button": "Reset my password", "note": "Choose a strong, unique password that you don't use elsewhere.",
+    "security": "Didn't request a password reset? You can ignore this email. Your password won't change unless you complete the reset."
+  },
+  {
+    "id": "reauthentication", "label": "Reauthentication", "subject": "Your verification code — ClipForge",
+    "preheader": "Use this code to confirm it's you. Never share it.",
+    "eyebrow": "A QUICK SECURITY CHECK",
+    "headline": "Let's confirm<br><span style=\"color:#b9a0ff;\">it's you.</span>",
+    "body": "Enter this verification code in ClipForge to confirm it's you and continue your requested account action.",
+    "code": true, "note": "Enter the code only in ClipForge. We will never ask you to share it by email or chat.",
+    "security": "Didn't request this code? Don't share or use it. Visit ClipForge directly to review your account security."
+  }
+]
