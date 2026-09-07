@@ -479,6 +479,7 @@ async function uploadVideoInChunks(
   onProgress: (progress: number) => void,
   uploadName: string,
 ): Promise<Project> {
+  onProgress(1);
   try {
     return await uploadVideoToR2(file, onProgress, uploadName);
   } catch (reason) {
@@ -552,14 +553,30 @@ async function uploadVideoInChunks(
 }
 
 async function uploadVideoToR2(file: File, onProgress: (progress: number) => void, uploadName: string): Promise<Project> {
-  const initialized = await authFetch(`${API_BASE_URL}/projects/upload/r2/init`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: uploadName, content_type: file.type, size: file.size }),
-  });
+  let initialized: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45_000);
+    try {
+      initialized = await authFetch(`${API_BASE_URL}/projects/upload/r2/init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: uploadName, content_type: file.type, size: file.size }),
+        signal: controller.signal,
+      });
+      if (initialized.ok || initialized.status === 404 || initialized.status === 503) break;
+    } catch {
+      initialized = null;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+    if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 1000));
+  }
+  if (!initialized) throw new Error('Der Upload-Dienst antwortet nicht. Bitte erneut versuchen.');
   if (initialized.status === 404 || initialized.status === 503) throw new Error('R2_NOT_CONFIGURED');
   if (!initialized.ok) throw new Error(await parseError(initialized));
   const upload = await initialized.json() as { upload_id: string; key: string; part_size: number; parts: { part_number: number; url: string }[] };
+  onProgress(2);
   let completedBytes = 0;
   let nextPart = 0;
   const completed: { part_number: number; etag: string }[] = [];
