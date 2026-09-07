@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { sendPresenceHeartbeat } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { authCallbackUrl } from '../lib/api-config';
+import { supabaseAuthMessage } from '../lib/api-config';
 
 type AuthContextValue = {
   session: Session | null;
@@ -70,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (error) throw new Error(supabaseAuthMessage(error));
     },
     signUp: async (email, password) => {
       const { data, error } = await supabase.auth.signUp({
@@ -78,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
         options: { emailRedirectTo: authCallbackUrl() },
       });
-      if (error) throw error;
+      if (error) throw new Error(supabaseAuthMessage(error));
       if (!data.user) throw new Error('Das Konto konnte nicht erstellt werden. Bitte erneut versuchen.');
       if (!data.session && data.user.identities?.length === 0) {
         throw new Error('Für diese E-Mail existiert bereits ein Konto. Bitte anmelden oder eine Bestätigung erneut senden.');
