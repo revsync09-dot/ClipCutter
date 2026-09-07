@@ -4,6 +4,7 @@ import { CheckCircle2, LoaderCircle, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../../components/auth-provider';
+import { supabase } from '../../../lib/supabase';
 
 export default function AuthCallbackPage() {
   const { loading, user } = useAuth();
@@ -11,17 +12,40 @@ export default function AuthCallbackPage() {
   const [callbackError, setCallbackError] = useState('');
 
   useEffect(() => {
-    const search = new URLSearchParams(window.location.search);
-    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const errorDescription = search.get('error_description') ?? hash.get('error_description') ?? '';
-    const errorTimer = window.setTimeout(() => setCallbackError(errorDescription), 0);
+    let active = true;
+    const finish = async () => {
+      const search = new URLSearchParams(window.location.search);
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const errorDescription = search.get('error_description') ?? hash.get('error_description') ?? '';
+      if (errorDescription) {
+        if (active) setCallbackError(errorDescription);
+        return;
+      }
+      const code = search.get('code');
+      const tokenHash = search.get('token_hash');
+      const type = search.get('type');
+      try {
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else if (tokenHash && (type === 'signup' || type === 'email')) {
+          const { error } = await supabase.auth.verifyOtp({
+            type,
+            token_hash: tokenHash,
+          });
+          if (error) throw error;
+        }
+      } catch (reason) {
+        if (active) setCallbackError(reason instanceof Error ? reason.message : 'Der Bestätigungslink konnte nicht verarbeitet werden.');
+      }
+    };
+    void finish();
     if (!loading && user) {
       window.location.replace('/#projects');
-      return;
+      return () => { active = false; };
     }
-
     const timer = window.setTimeout(() => setTimedOut(true), 8_000);
-    return () => { window.clearTimeout(errorTimer); window.clearTimeout(timer); };
+    return () => { active = false; window.clearTimeout(timer); };
   }, [loading, user]);
 
   const waiting = !callbackError && (loading || (!user && !timedOut));
