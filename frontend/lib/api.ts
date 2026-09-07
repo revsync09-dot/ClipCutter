@@ -577,28 +577,48 @@ async function uploadVideoToR2(file: File, onProgress: (progress: number) => voi
   if (!initialized.ok) throw new Error(await parseError(initialized));
   const upload = await initialized.json() as { upload_id: string; key: string; part_size: number; parts: { part_number: number; url: string }[] };
   onProgress(2);
-  let completedBytes = 0;
   let nextPart = 0;
   const completed: { part_number: number; etag: string }[] = [];
+  const partProgress = new Map<number, number>();
+  const reportProgress = () => {
+    const transferred = [...partProgress.values()].reduce((total, value) => total + value, 0);
+    onProgress(Math.min(99, Math.max(2, Math.round((transferred / file.size) * 98) + 1)));
+  };
   const sendPart = async (part: { part_number: number; url: string }) => {
     const start = (part.part_number - 1) * upload.part_size;
     const body = file.slice(start, Math.min(start + upload.part_size, file.size));
-    let response: Response | null = null;
+    let etag = '';
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      partProgress.set(part.part_number, 0);
       try {
-        response = await fetch(part.url, { method: 'PUT', body });
-        if (response.ok) break;
+        etag = await new Promise<string>((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.open('PUT', part.url);
+          request.timeout = 120_000;
+          request.upload.onprogress = event => {
+            if (event.lengthComputable) {
+              partProgress.set(part.part_number, event.loaded);
+              reportProgress();
+            }
+          };
+          request.onload = () => {
+            if (request.status >= 200 && request.status < 300) resolve(request.getResponseHeader('ETag') ?? '');
+            else reject(new Error(`R2-Upload fehlgeschlagen (${request.status})`));
+          };
+          request.onerror = () => reject(new Error('R2-Netzwerkfehler'));
+          request.ontimeout = () => reject(new Error('R2-Upload-Timeout'));
+          request.send(body);
+        });
+        if (etag) break;
       } catch {
-        response = null;
+        etag = '';
       }
       if (attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 700 * (attempt + 1)));
     }
-    if (!response?.ok) throw new Error('Ein R2-Upload-Block konnte nicht übertragen werden.');
-    const etag = response.headers.get('ETag');
-    if (!etag) throw new Error('R2 hat keinen ETag für den Upload-Block zurückgegeben.');
+    if (!etag) throw new Error('Ein R2-Upload-Block konnte nicht übertragen werden. Bitte erneut versuchen.');
     completed.push({ part_number: part.part_number, etag });
-    completedBytes += body.size;
-    onProgress(Math.min(99, Math.max(2, Math.round((completedBytes / file.size) * 100))));
+    partProgress.set(part.part_number, body.size);
+    reportProgress();
   };
   const worker = async () => {
     while (nextPart < upload.parts.length) {

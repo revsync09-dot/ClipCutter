@@ -20,7 +20,7 @@ def is_configured() -> bool:
 
 def _client():
     import boto3
-    from botocore.client import Config
+    from botocore.config import Config as BotocoreConfig
 
     if not is_configured():
         raise RuntimeError("Cloudflare R2 is not configured")
@@ -30,7 +30,13 @@ def _client():
         aws_access_key_id=settings.r2_access_key_id,
         aws_secret_access_key=settings.r2_secret_access_key,
         region_name="auto",
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=BotocoreConfig(
+            signature_version="s3v4",
+            connect_timeout=15,
+            read_timeout=30,
+            retries={"max_attempts": 2, "mode": "standard"},
+            s3={"addressing_style": "path"},
+        ),
     )
 
 
