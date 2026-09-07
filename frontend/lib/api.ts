@@ -594,7 +594,7 @@ async function uploadVideoToR2(file: File, onProgress: (progress: number) => voi
         etag = await new Promise<string>((resolve, reject) => {
           const request = new XMLHttpRequest();
           request.open('PUT', part.url);
-          request.timeout = 120_000;
+          request.timeout = 600_000;
           request.upload.onprogress = event => {
             if (event.lengthComputable) {
               partProgress.set(part.part_number, event.loaded);
@@ -627,7 +627,7 @@ async function uploadVideoToR2(file: File, onProgress: (progress: number) => voi
       await sendPart(part);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(8, upload.parts.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(4, upload.parts.length) }, () => worker()));
   const completedResponse = await authFetch(`${API_BASE_URL}/projects/upload/r2/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
